@@ -1,0 +1,5 @@
+build/
+cmake-build-*/
+.DS_Store
+*.mov
+*.mp4
