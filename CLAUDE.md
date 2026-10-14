@@ -30,11 +30,12 @@ contract, and the spec wins where they differ.
 1. `ctest -R core`: no ffmpeg, no GPU, no files. This is the gate for every change.
 2. `ctest -R render`: generated movies, rendered, counted with ffprobe. Needs ffmpeg and
    ffprobe in the PATH.
-3. `vrc --dry-run` on **real** movies, the ones a camera or an editor produced. This is
-   where the prepass gets tested: `frame_count` is the number of non-discarded packets and
-   `fps` is the mean over the measured span, both of which are exact on constant-rate
-   files and are the first thing to doubt on a file carrying an edit list or a variable
-   rate.
+3. `tools/check-sources.sh build/vrc <folder of real movies>` on the material a camera or
+   an editor produced. This is where the prepass gets tested: `frame_count` is the number
+   of non-discarded packets and `fps` is the mean over the measured span, both of which
+   are exact on constant-rate files and are the first thing to doubt on a file carrying an
+   edit list or a variable rate. The script compares the prepass with a full
+   `ffprobe -count_frames` and exits non-zero on any disagreement.
 4. A visual check in a player.
 
 A count alone never proves a seed replayed: the frame count does not depend on the seed.
