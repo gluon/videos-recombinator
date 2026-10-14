@@ -101,6 +101,13 @@ int test_decode(const std::string& path, int64_t frames, int width, int height,
         if (!same(f, ref[static_cast<size_t>(i)])) ++mismatches;
         rnd->prefetch(any(rng));
     }
+    // A demand that interrupts a prefetch, possibly between its seek and its first frame,
+    // must not leave the decoder believing it stands where it does not.
+    for (int rep = 0; rep < 400; ++rep) {
+        rnd->prefetch(any(rng));
+        const int64_t i = any(rng);
+        if (!same(rnd->frame_at(i, &err), ref[static_cast<size_t>(i)])) ++mismatches;
+    }
     if (mismatches) std::fprintf(stderr, "%d random-access frames differ\n", mismatches);
     CHECK(mismatches == 0);
 
@@ -148,6 +155,13 @@ int test_cache(const std::string& path) {
     CHECK(st.misses == 11);
     CHECK(st.evictions == 8);
     CHECK(st.bytes <= frame_bytes * 3);
+
+    // Least recently used went: 7 and 9 were touched after 8, so 8 was evicted, not them.
+    CHECK(cache.get(0, 7, &err) != nullptr);
+    CHECK(cache.get(0, 9, &err) != nullptr);
+    st = cache.stats();
+    CHECK(st.hits == 4);
+    CHECK(st.misses == 11);
 
     // A budget smaller than one frame still holds the frame it just returned.
     vrc::FrameCache tiny(1);

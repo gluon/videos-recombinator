@@ -47,7 +47,7 @@ int64_t order_ts(int64_t pts, int64_t dts) { return dts != AV_NOPTS_VALUE ? dts 
 
 struct KeyInfo {
     int64_t pts = 0;
-    int64_t seek_ts = 0;  // dts when known, the timestamp demuxers index seeks by
+    int64_t seek_ts = 0;  // dts when known, else pts: its place in decode order
 };
 
 class FfmpegDecoder final : public Decoder {
@@ -136,13 +136,11 @@ class FfmpegDecoder final : public Decoder {
     std::vector<KeyInfo> keys_;   // sorted by pts
     int64_t first_seek_ts_ = 0;   // order timestamp of the first packet of the stream
 
-    // Decoder position, valid when positioned_. floor_ is the display index of the
-    // keyframe decoding started from, cur_ the last frame produced since, or floor_ - 1
-    // before the first. Any frame after cur_ and not before floor_ is reached by decoding
-    // forward.
+    // Decoder position, valid when positioned_: the display index of the last frame
+    // produced since the last seek, or the one before the keyframe sought while none has
+    // come out yet. Any frame after it is reached by decoding forward.
     bool positioned_ = false;
     bool eof_sent_ = false;
-    int64_t floor_ = 0;
     int64_t cur_ = -1;
 
     // Worker hand-off.
@@ -300,9 +298,11 @@ bool FfmpegDecoder::seek_to(const KeyInfo& key, int64_t floor, std::string* erro
     positioned_ = false;
     cur_ = -1;
 
-    // First the keyframe itself. If the demuxer lands past it, which some do when they
-    // seek on pts rather than dts, fall back to the start of the stream: slower, exact.
-    const int64_t targets[2] = {key.seek_ts, first_seek_ts_};
+    // Demuxers index seeks on different clocks: mov lands one GOP early when asked for a
+    // keyframe dts, others can land past a keyframe asked by pts. Try its pts, then its
+    // dts, then the start of the stream. Landing before the keyframe is exact, only
+    // slower; landing after it is rejected.
+    const int64_t targets[3] = {key.pts, key.seek_ts, first_seek_ts_};
     for (const int64_t ts : targets) {
         if (av_seek_frame(fmt_, stream_, ts, AVSEEK_FLAG_BACKWARD) < 0) continue;
         for (;;) {
@@ -315,7 +315,6 @@ bool FfmpegDecoder::seek_to(const KeyInfo& key, int64_t floor, std::string* erro
             if (order_ts(pending_->pts, pending_->dts) <= key.seek_ts) {
                 has_pending_ = true;
                 positioned_ = true;
-                floor_ = floor;
                 cur_ = floor - 1;
                 return true;
             }
@@ -340,8 +339,7 @@ FfmpegDecoder::Status FfmpegDecoder::decode(int64_t index, Frame* out, std::stri
     const int64_t key_display = static_cast<int64_t>(
         std::lower_bound(pts_.begin(), pts_.end(), key.pts) - pts_.begin());
 
-    const bool forward = positioned_ && index > cur_ && index >= floor_ &&
-                         key_display - cur_ <= kForwardSlack;
+    const bool forward = positioned_ && index > cur_ && key_display - cur_ <= kForwardSlack;
     if (!forward && !seek_to(key, std::min(key_display, index), error)) return Status::Failed;
 
     for (;;) {
