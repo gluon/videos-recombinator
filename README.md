@@ -41,6 +41,18 @@ are large.
 output. `fit` keeps the aspect ratio and pads with opaque black, `fill` crops to cover,
 `stretch` ignores the aspect ratio.
 
+## Before rendering from real footage
+
+```
+tools/check-sources.sh build/vrc ~/path/to/rushes
+```
+
+For every movie it finds, this compares what `vrc`'s prepass measured against a full
+`ffprobe -count_frames`, and reports variable-rate files. It exits non-zero if any file
+disagrees. Worth running once per batch of new material: the prepass is exact on
+constant-rate footage and approximate on files carrying an edit list, which only real
+camera and editor output exercises.
+
 ## Build
 
 ```
