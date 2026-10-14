@@ -52,7 +52,9 @@ if(VRC_BUILD_CLI)
   target_link_libraries(vrc_io PUBLIC vrc_core PkgConfig::FFMPEG)
 
   add_executable(vrc src/cli/main.cpp)
-  target_link_libraries(vrc PRIVATE vrc_core vrc_io)
+  # vrc_io already links vrc_core PUBLIC; naming both here makes the linker see the
+  # same archive twice and warn.
+  target_link_libraries(vrc PRIVATE vrc_io)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -69,9 +71,10 @@ if(VRC_BUILD_UI)
 
   add_executable(vrc-ui src/app/main.cpp)
   target_include_directories(vrc-ui PRIVATE ${sokol_SOURCE_DIR})
-  target_link_libraries(vrc-ui PRIVATE vrc_core)
   if(TARGET vrc_io)
-    target_link_libraries(vrc-ui PRIVATE vrc_io)
+    target_link_libraries(vrc-ui PRIVATE vrc_io)  # pulls vrc_core transitively
+  else()
+    target_link_libraries(vrc-ui PRIVATE vrc_core)
   endif()
 
   if(APPLE)

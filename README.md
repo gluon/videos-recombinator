@@ -39,3 +39,11 @@ ctest --test-dir build --output-on-failure
 ```
 
 On macOS: `brew install ffmpeg pkg-config cmake`.
+
+## Verified toolchain
+
+Configured, built and tested on macOS with AppleClang 17.0.0, CMake, and ffmpeg from
+Homebrew: libavformat 62.12.101, libavcodec 62.28.101, libavutil 60.26.101,
+libswscale 9.5.101. `src/io` must target that API generation: `avcodec_send_packet` /
+`avcodec_receive_frame`, `AVChannelLayout`, `av_channel_layout_*`. The pre-59 decode
+calls do not exist there.
