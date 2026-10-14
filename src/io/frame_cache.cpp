@@ -112,7 +112,11 @@ const Frame& FrameCache::black(int width, int height) {
         f.width = width;
         f.height = height;
         f.stride = width * 4;
+        // Opaque black, not zeroed RGBA. A zero alpha would make every black slot
+        // transparent in a format that carries alpha, prores4444 among them, and a
+        // transparent frame is not a black frame.
         f.pixels.assign(static_cast<size_t>(width) * height * 4, 0);
+        for (size_t i = 3; i < f.pixels.size(); i += 4) f.pixels[i] = 255;
     }
     return f;
 }

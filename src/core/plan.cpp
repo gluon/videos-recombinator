@@ -102,6 +102,24 @@ bool is_forbidden_pair(const Segment& a, const Segment& b) {
     return a.source_index == b.source_index && b.segment_index == a.segment_index + 1;
 }
 
+uint64_t plan_digest(const Plan& plan) {
+    // FNV-1a over the bytes that define the timeline. Not a cryptographic hash: it only
+    // has to change when the timeline changes.
+    uint64_t h = 1469598103934665603ULL;
+    auto mix = [&h](uint64_t v) {
+        for (int b = 0; b < 8; ++b) {
+            h ^= (v >> (b * 8)) & 0xff;
+            h *= 1099511628211ULL;
+        }
+    };
+    for (const auto& s : plan.slots) {
+        mix(s.kind == SlotKind::Black ? 1u : 0u);
+        mix(static_cast<uint64_t>(s.source_index));
+        mix(static_cast<uint64_t>(s.frame));
+    }
+    return h;
+}
+
 int64_t predicted_length(const std::vector<Source>& sources, const RecombineParams& p) {
     int64_t total = 0;
     for (const auto& s : sources) total += s.frame_count;

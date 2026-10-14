@@ -75,10 +75,13 @@ render() {
     shift
     dry=$("$VRC" --dry-run "$@") || fail "vrc --dry-run $*"
     planned=$(field frames "$dry")
+    digest=$(field plan "$dry")
     [ -n "$planned" ] || fail "no frames line in: $dry"
+    [ -n "$digest" ] || fail "no plan line in: $dry"
 
     out=$("$VRC" --out "$WORK/out" "$@") || fail "vrc --out $*"
-    [ "$(field frames "$out")" = "$planned" ] || fail "render and dry-run plans differ for $*"
+    [ "$(field frames "$out")" = "$planned" ] || fail "render and dry-run counts differ for $*"
+    [ "$(field plan "$out")" = "$digest" ] || fail "render and dry-run timelines differ for $*"
     file=$(field wrote "$out")
     expected=$(printf '%s/out/vid%03d.mov' "$WORK" "$expected_index")
     [ "$file" = "$expected" ] || fail "wrote $file, expected $expected"
@@ -99,13 +102,40 @@ render 640x360 --seed 7 --segments 9 --black 20 --black-run 5 --allow-adjacent \
 
 # The end criterion as stated: no seed given, so vrc draws one and reports it; a dry run
 # with that seed must announce the frame count the file holds.
+#
+# The frame count does not depend on the seed, so it alone would pass even if the seed were
+# mangled on its way back in. The plan digest is what actually proves the round trip:
+# entropy_seed() sets the top bit about half the time, and a seed read with strtoll instead
+# of strtoull saturates there, changing almost every slot while keeping the count.
 out=$("$VRC" --out "$WORK/out" a.mov b.mov) || fail "vrc --out a.mov b.mov"
 seed=$(field seed "$out")
 file=$(field wrote "$out")
+digest=$(field plan "$out")
 dry=$("$VRC" --dry-run --seed "$seed" a.mov b.mov) || fail "vrc --dry-run --seed $seed"
 planned=$(field frames "$dry")
 got=$(count_frames "$file")
-echo "drawn seed $seed -> $file: plan $planned frames, ffprobe $got frames"
+echo "drawn seed $seed -> $file: plan $planned frames, ffprobe $got frames, digest $digest"
 [ "$got" = "$planned" ] || fail "$file has $got frames, the plan for seed $seed has $planned"
+[ "$(field plan "$dry")" = "$digest" ] \
+    || fail "seed $seed does not replay: digest $(field plan "$dry") instead of $digest"
+
+# The high half of the seed space must survive the command line, since that is where half
+# the drawn seeds live.
+refuses() {  # refuses <args...>: the command must exit non-zero
+    if "$VRC" "$@" >/dev/null 2>&1; then
+        fail "vrc accepted $*"
+    fi
+}
+
+big=18446744073709551615
+d1=$(field plan "$("$VRC" --dry-run --seed "$big" a.mov b.mov)")
+d2=$(field plan "$("$VRC" --dry-run --seed 9223372036854775807 a.mov b.mov)")
+[ -n "$d1" ] || fail "no plan line for seed $big"
+[ "$d1" != "$d2" ] || fail "--seed $big was truncated to INT64_MAX: both give digest $d1"
+
+refuses --dry-run --seed 18446744073709551616 a.mov b.mov   # above 2^64-1
+refuses --dry-run --seed -1 a.mov b.mov
+refuses --dry-run --scaling squash a.mov b.mov
+refuses --seed 1 a.mov                                      # a render with no --out
 
 echo "render: ok"

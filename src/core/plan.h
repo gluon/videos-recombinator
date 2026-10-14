@@ -32,4 +32,10 @@ std::vector<Slot> expand(const std::vector<Segment>& ordered_segments);
 // adjacency the ordering constraint forbids.
 bool is_forbidden_pair(const Segment& a, const Segment& b);
 
+// Fingerprint of the whole timeline: every slot's kind, source and frame, in order.
+// Two plans with the same digest are the same plan. This is what makes a seed round trip
+// provable from outside the process: the frame count alone is seed-independent, so
+// comparing counts cannot catch a seed that was mangled on its way in.
+uint64_t plan_digest(const Plan& plan);
+
 }  // namespace vrc
