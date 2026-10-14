@@ -178,6 +178,39 @@ void test_determinism() {
     check(differs, "a different seed yields a different timeline");
 }
 
+// The digest tracks the timeline, and the frame count does not. The second half of this
+// is the point: a test that compares counts cannot detect a mangled seed, which is how
+// the CLI's --seed truncation went unnoticed.
+void test_digest() {
+    const auto sources = two_sources(381, 378);
+    vrc::RecombineParams p;
+    p.segments_per_source = 7;
+    p.black_total = 23;
+    p.black_run_max = 4;
+
+    p.seed = 18446744073709551615ULL;
+    const auto a = vrc::build_plan(sources, p);
+    p.seed = 9223372036854775807ULL;  // what strtoll would have stored instead
+    const auto b = vrc::build_plan(sources, p);
+    check(a.ok && b.ok, "both plans built");
+
+    check(a.plan.slots.size() == b.plan.slots.size(),
+          "the frame count is the same for both seeds, so it proves nothing about them");
+    check(vrc::plan_digest(a.plan) != vrc::plan_digest(b.plan),
+          "the digest separates two seeds the count cannot");
+
+    const auto again = vrc::build_plan(sources, p);
+    check(vrc::plan_digest(again.plan) == vrc::plan_digest(b.plan),
+          "the same seed yields the same digest");
+
+    const auto reordered = vrc::reorder_plan(b.plan, 4242, true);
+    check(reordered.ok, "reordered");
+    check(vrc::plan_digest(reordered.plan) != vrc::plan_digest(b.plan),
+          "reordering changes the digest");
+    check(reordered.plan.slots.size() == b.plan.slots.size(),
+          "reordering does not change the count");
+}
+
 // Reordering keeps the segments and their black runs, and only changes the order.
 void test_reorder_keeps_segments() {
     const auto sources = two_sources(300, 300);
@@ -244,6 +277,7 @@ int main() {
     test_black_run_contiguity();
     test_ordering_constraint();
     test_determinism();
+    test_digest();
     test_reorder_keeps_segments();
     test_errors();
     test_three_sources();

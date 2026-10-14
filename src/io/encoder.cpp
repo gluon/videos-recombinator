@@ -61,6 +61,13 @@ bool choose_codec(const std::string& name, CodecChoice* c) {
     return true;
 }
 
+// Opaque black, matching FrameCache::black(). Padding with zeroed RGBA would be
+// transparent in a format that carries alpha, prores4444 among them.
+void fill_opaque_black(std::vector<uint8_t>* buf) {
+    std::fill(buf->begin(), buf->end(), 0);
+    for (size_t i = 3; i < buf->size(); i += 4) (*buf)[i] = 255;
+}
+
 // Copies `rows` rows of `row_bytes` between two RGBA buffers of different strides.
 void copy_rows(const uint8_t* src, int src_stride, uint8_t* dst, int dst_stride,
                int row_bytes, int rows) {
@@ -200,6 +207,7 @@ bool FfmpegEncoder::init(const std::string& path, const OutputParams& out,
                              1 << 16, 1 << 16);
 
     canvas_.assign(static_cast<size_t>(out.width) * out.height * 4, 0);
+    fill_opaque_black(&canvas_);
     return true;
 }
 
@@ -265,7 +273,7 @@ bool FfmpegEncoder::write(const Frame& frame, std::string* error) {
             }
             case Scaling::Fit: {
                 // Resample inside the output, aspect ratio kept, centred, padded with the
-                // same zeroed RGBA a black slot uses.
+                // same opaque black a black slot uses.
                 int fw = W, fh = H;
                 if (static_cast<int64_t>(w) * H > static_cast<int64_t>(W) * h)
                     fh = std::max(1, static_cast<int>(std::lround(double(W) * h / w)));
@@ -281,7 +289,7 @@ bool FfmpegEncoder::write(const Frame& frame, std::string* error) {
                     fitted = fitted_.data();
                     fitted_stride = fw * 4;
                 }
-                std::fill(canvas_.begin(), canvas_.end(), 0);
+                fill_opaque_black(&canvas_);
                 copy_rows(fitted, fitted_stride,
                           canvas + static_cast<size_t>((H - fh) / 2) * cs +
                               static_cast<size_t>((W - fw) / 2) * 4,

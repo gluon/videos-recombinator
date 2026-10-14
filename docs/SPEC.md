@@ -7,7 +7,7 @@ C++ port of the Max/Jitter `videosRecombinator` 2V chain. What the original does
 
 | | Decision |
 | --- | --- |
-| Memory | On-demand decoding with a keyframe index and an LRU frame cache. No full in-RAM buffer. |
+| Memory | On-demand decoding with a keyframe index and an LRU frame cache. No full in-RAM buffer. A pointer from the cache is valid until the next call to it. |
 | Behaviour | The seven divergences D1 to D7 of the audit are **corrected**. The original behaviour is not reproduced and no compatibility flag is provided. |
 | Voices | Generalised to `n` sources. The voice is a field, never the sign of a frame number. |
 
@@ -32,6 +32,15 @@ A zero seed means "draw one from the system entropy and report it", so a result 
 liked can always be reproduced.
 
 This replaces `Math.random()`, which made the original irreproducible.
+
+`plan_digest(plan)` fingerprints the timeline: every slot's kind, source and frame, in
+order. It is what makes reproducibility checkable from outside the process, and it exists
+because the obvious check does not work: the output length is
+`sum(frame_count) + black_total`, which does not involve the seed at all, so two different
+seeds give the same count. A test comparing counts cannot detect a seed that was damaged on
+its way in, and that is exactly how a `strtoll` in the CLI, silently saturating every seed
+above 2^63-1 while half the drawn seeds sit above it, went unnoticed. Seeds use the full
+64-bit range and are parsed as such.
 
 ## 3. Cutting, per source
 
@@ -68,6 +77,10 @@ independent index, which scattered them.
 Black insertion positions are held as `(segment, offset, run_length)` records attached to
 the segment, so that re-ordering the segments (section 5) moves their black frames with
 them. Only a full recalculation redraws them.
+
+A black frame is **opaque** black: RGB zero, alpha 255. Zeroed RGBA would be transparent
+in any output format that carries an alpha channel, prores4444 among them, and a
+transparent frame is not a black frame. The same opaque black pads a `Fit` output.
 
 ## 5. Segment ordering
 
@@ -113,6 +126,16 @@ Per source: open once with libavformat, build an index of packet PTS and keyfram
 positions in a prepass, keep the dimensions, frame count and fps from that prepass rather
 than trusting container metadata.
 
+What the prepass measures, and its limits. `frame_count` is the number of video packets the
+demuxer does not flag as discarded, `fps` is the mean rate over the span between the first
+and the last pts, and the dimensions come from decoding frame 0. This is exact for
+constant-rate material. Two cases are known to be approximations and are not silently
+hidden: a variable-rate source is re-timed to its own mean rate, and a file whose edit list
+trims content the demuxer still delivers would be counted long. A frame decoded at a pts
+the prepass did not index is a hard error naming the file, so the failure is loud rather
+than a run of wrong frames. Real camera and editor output is the material that tests this;
+generated test movies do not.
+
 `FrameCache` is an LRU of decoded RGBA frames, sized by a byte budget
 (`--cache-mb`, default 1024). A miss seeks to the keyframe at or before the target and
 decodes forward. Because the plan is known in full before rendering, the renderer walks it
@@ -127,7 +150,14 @@ libavcodec, muxed by libavformat. Codec is a named parameter mapping to the orig
 `prores422` (`prores_ks`, profile 2), `prores4444` (`prores_ks`, profile 4), `h264`
 (`libx264`), `mjpeg`. Output path is `<dir>/vid%03d.mov`, the original's naming, with the
 counter resolved at start by scanning for the first free index rather than kept in a UI
-widget.
+widget. The output directory has no default: a render without one is refused.
+
+A codec name selects the pixel format, the profile, the colour matrix and the dimension
+constraints that codec requires. Those are properties of the format, not choices, so they
+live in `src/io` and not in `OutputParams`. YUV output is BT.709, except mjpeg, which is
+BT.601 full range because libavcodec decodes every JPEG that way whatever the container
+declares. `h264` currently takes the libx264 defaults; no rate or quality parameter is
+exposed yet.
 
 Encoding is not real time and is not clocked by anything. No `delay 8`, no gate: the
 renderer is a loop over the plan.
@@ -155,12 +185,15 @@ tests/        core tests, runnable without ffmpeg
 
 ## 11. Verification, in order
 
-1. `ctest` passes on the core: cut coverage, black-run contiguity, ordering constraint,
-   predicted length, seed reproducibility. No ffmpeg, no GPU, no files.
-2. `vrc` renders a plan from two short test movies and the output frame count equals the
-   plan size, read back with `ffprobe`.
-3. A visual check on macOS that the output actually alternates the two sources and shows
-   black runs where the plan says.
+1. `ctest -R core`: cut coverage, black-run contiguity, ordering constraint, predicted
+   length, seed reproducibility, digest behaviour. No ffmpeg, no GPU, no files.
+2. `ctest -R render`: movies generated with ffmpeg, rendered by `vrc`, counted with
+   `ffprobe`, and the `plan` digest compared between the dry run and the render so that the
+   seed round trip is actually tested and not just the length.
+3. `vrc --dry-run` on real camera or editor output, checking `frames` against what the
+   files really hold. This is what tests the prepass, section 7.
+4. A visual check in a player: the output alternates the sources and shows black runs where
+   the plan says.
 
-Steps 2 and 3 need a real machine with ffmpeg and real source movies. They cannot be
+Steps 3 and 4 need a real machine with ffmpeg and real source movies. They cannot be
 proved in a cloud session and must not be reported as proved there.

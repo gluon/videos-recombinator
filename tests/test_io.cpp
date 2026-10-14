@@ -181,12 +181,15 @@ int test_cache(const std::string& path) {
     CHECK(cache.get(0, s.frame_count, &err) == nullptr);
     CHECK(!err.empty());
 
+    // Black slots are opaque black, so that a format carrying alpha does not turn them
+    // into holes: RGB at zero, alpha at 255.
     const vrc::Frame& b = cache.black(16, 8);
     CHECK(b.width == 16 && b.height == 8 && b.stride == 64);
     CHECK(b.pixels.size() == 16 * 8 * 4);
-    bool zero = true;
-    for (uint8_t v : b.pixels) zero = zero && v == 0;
-    CHECK(zero);
+    bool opaque_black = true;
+    for (size_t i = 0; i < b.pixels.size(); ++i)
+        opaque_black = opaque_black && b.pixels[i] == (i % 4 == 3 ? 255 : 0);
+    CHECK(opaque_black);
     return 0;
 }
 
@@ -292,6 +295,16 @@ int test_scaling(const std::string& dir) {
         CHECK(near(f, 100, 37, red));
         CHECK(near(f, 100, 62, blue));
         CHECK(near(f, 100, 95, cyan));
+
+        // The Fit pillars must be opaque. In prores4444, which carries alpha, a zero
+        // alpha there would make them holes rather than black bars.
+        if (codec == "prores4444") {
+            const uint8_t pillar_alpha = f.pixels[static_cast<size_t>(50) * f.stride + 10 * 4 + 3];
+            if (pillar_alpha != 255)
+                std::fprintf(stderr, "prores4444 Fit pillar alpha is %d, expected 255\n",
+                             pillar_alpha);
+            CHECK(pillar_alpha == 255);
+        }
     }
 
     // Refusals are loud.
