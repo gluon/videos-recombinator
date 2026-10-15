@@ -1,13 +1,29 @@
 # videos-recombinator
 
-C++ port of `videosRecombinator`, a Max/MSP/Jitter patch that cuts two movies into
-segments, shuffles the segments across both sources, sprinkles black frames into them,
-and renders the result to a movie file.
+Cuts movies into segments, shuffles those segments across all of the sources, drops runs of
+black frames into them, and renders the result to a new movie. Give it two films and it
+gives you back a third, assembled from both and from nothing else.
 
-- `docs/MAX_SOURCE_AUDIT.md`: what the original patch does, read from the files, including
+It is a C++ port of `videosRecombinator`, a Max/MSP/Jitter patch written in 2024. The port
+exists because a finished patch and a program are not the same object: the patch could not
+reproduce a result it had just produced, counted only one of its two voices, and was
+limited to two voices by the trick it used to tell them apart. All of that is addressed
+here, and the reasoning is written down rather than assumed.
+
+There are two binaries. `vrc` plans and renders from a command line and is the testable
+product. `vrc-ui` is a sokol and Dear ImGui interface that keeps the seven numbered steps of
+the original patch, with previews you can scrub through before anything is written.
+
+Two documents carry the design, and they are the place to start:
+
+- `docs/MAX_SOURCE_AUDIT.md`: what the original patch does, read from its files, including
   the seven places where its behaviour and its stated intent disagree.
 - `docs/SPEC.md`: what this program does, including which of those seven are corrected and
   how.
+
+MIT licensed. Note that `vrc` links ffmpeg: the source is unencumbered, but a binary built
+against an ffmpeg that includes libx264 inherits the GPL, so read the terms before shipping
+an executable.
 
 ## State
 
