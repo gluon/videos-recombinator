@@ -166,27 +166,52 @@ renderer is a loop over the plan.
 
 - `vrc`, headless CLI. Does the whole job: scan, plan, render. This is the testable
   product and the one that must exist first.
-- `vrc-ui`, sokol application. Preview of each source and of the output, parameters,
-  plan inspector, render trigger. It calls into the same core and owns no logic.
+- `vrc-ui`, sokol application. The seven steps of the original patch, previews of each
+  source and of the output, and a threaded render. It calls into the same core and owns no
+  algorithm.
 
-The split is hard: `src/core` and `src/io` have no sokol dependency, `src/app` has no
-algorithm. A plan computed by the UI and a plan computed by the CLI from the same seed and
+The split is hard, and in three layers rather than two:
+
+- `src/core` and `src/io` have no sokol dependency.
+- `src/app/app_state.cpp` holds every decision the interface makes and depends on sokol,
+  ImGui and ffmpeg not at all: it uses the `Decoder` and `Encoder` interfaces. `test_app`
+  substitutes fakes for both and drives the seven steps, the seed bookkeeping, the
+  previews, the render thread and every refusal, with no window and no movie files.
+- `src/app/ui_draw.cpp` draws and holds nothing but GPU textures. `src/app/main.cpp` is the
+  sokol_app loop. Only these two are unprovable without a screen.
+
+A plan computed by the interface and a plan computed by the CLI from the same seeds and
 params are identical, and there is a test for it.
+
+The interface's two buttons map to two seeds. CALCULATE draws the cuts, the black runs and
+a first order, from `--seed`. "New order, same cuts" redraws only the order, from a second
+seed, which the CLI takes as `--reorder-seed`. Both are shown on screen and both appear in
+the command line the interface prints, so any state reached by clicking is reachable from a
+script. This is what the patch could not do at all.
+
+Dependency revisions are pinned to exact commits, not branches. sokol's API moves: between
+this repo's bootstrap and the interface landing, `sg_update_image` was replaced by
+`sg_write_image_transient` and an ImGui texture became an `sg_view` rather than an
+`sg_image`. A floating tag would break the build with nobody having touched this repo.
 
 ## 10. Layout
 
 ```
-src/core/     rng, types, cuts, plan, ordering      pure, no I/O, no ffmpeg
-src/io/       decoder, frame_cache, encoder          ffmpeg
+src/core/     rng, types, cuts, plan, ordering, digest   pure, no I/O, no ffmpeg
+src/io/       frame_cache                                no ffmpeg (interfaces only)
+src/io/       decoder, encoder                           ffmpeg
 src/cli/      vrc
-src/app/      vrc-ui                                 sokol
-tests/        core tests, runnable without ffmpeg
+src/app/      app_state                                  no sokol, no ffmpeg: all decisions
+src/app/      ui_draw, main, file_dialog                 sokol, ImGui, platform
+tests/        test_core, test_app                        no ffmpeg, no GPU, no files
+tests/        test_io, test_render.sh                    ffmpeg
 ```
 
 ## 11. Verification, in order
 
-1. `ctest -R core`: cut coverage, black-run contiguity, ordering constraint, predicted
-   length, seed reproducibility, digest behaviour. No ffmpeg, no GPU, no files.
+1. `ctest -R core` and `ctest -R app`: cut coverage, black-run contiguity, ordering
+   constraint, predicted length, seed reproducibility, digest behaviour, and the whole
+   interface driven against fake decoders. No ffmpeg, no GPU, no files.
 2. `ctest -R render`: movies generated with ffmpeg, rendered by `vrc`, counted with
    `ffprobe`, and the `plan` digest compared between the dry run and the render so that the
    seed round trip is actually tested and not just the length.

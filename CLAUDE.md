@@ -20,6 +20,16 @@ contract, and the spec wins where they differ.
   for byte. There is a test for it; keep it passing.
 - The plan is computed in full before a single frame is decoded. No lazy decisions during
   rendering.
+- `src/app` splits in two and must stay split. `app_state.cpp` holds every decision the
+  interface makes and includes no sokol, no ImGui and no ffmpeg header; `ui_draw.cpp` and
+  `main.cpp` draw and run the window and decide nothing. A condition, a clamp or a refusal
+  written inside a draw function is in the wrong file: `test_app` cannot reach it, and
+  nothing else will.
+- A Decoder serves one consumer. The interface's previews and its render thread never share
+  one: `start_render` opens its own.
+- sokol and Dear ImGui are pinned to exact revisions in CMakeLists.txt, not to branches.
+  sokol's API moves under its users. Raise those pins deliberately and read sokol's
+  CHANGELOG.md when you do.
 - Stubs fail loudly. A function that is not implemented returns an error naming itself.
   It never returns an empty frame, a zero, or a default that could pass for a result.
 - The seven divergences D1 to D7 are corrected, not reproduced. There is no compatibility
@@ -27,7 +37,9 @@ contract, and the spec wins where they differ.
 
 ## Verification, and what cannot be verified here
 
-1. `ctest -R core`: no ffmpeg, no GPU, no files. This is the gate for every change.
+1. `ctest -R core` and `ctest -R app`: no ffmpeg, no GPU, no files. The first covers the
+   planner, the second drives the whole interface against fake decoders. This pair is the
+   gate for every change.
 2. `ctest -R render`: generated movies, rendered, counted with ffprobe. Needs ffmpeg and
    ffprobe in the PATH.
 3. `tools/check-sources.sh build/vrc <folder of real movies>` on the material a camera or
@@ -36,7 +48,8 @@ contract, and the spec wins where they differ.
    are exact on constant-rate files and are the first thing to doubt on a file carrying an
    edit list or a variable rate. The script compares the prepass with a full
    `ffprobe -count_frames` and exits non-zero on any disagreement.
-4. A visual check in a player.
+4. A visual check: the rendered file in a player, and `vrc-ui` on screen. Nothing tests
+   `ui_draw.cpp` or the sokol_app shell.
 
 A count alone never proves a seed replayed: the frame count does not depend on the seed.
 Compare the `plan` digest.
