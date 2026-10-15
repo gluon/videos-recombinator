@@ -11,6 +11,11 @@
 #include "sokol_glue.h"
 #include "sokol_log.h"
 
+// SOKOL_IMPL switches on the implementation of every sokol header that follows, and
+// sokol_imgui.h is one of them. Its implementation needs imgui.h and belongs in exactly
+// one translation unit, which is ui_draw.cpp. Undefining it here keeps this include to
+// the declarations.
+#undef SOKOL_IMPL
 #include "util/sokol_imgui.h"
 
 #include "app/app_state.h"
@@ -50,11 +55,15 @@ void frame() {
 
     vrc::ui_draw(g_app);
 
+    // simgui_flush() builds the command lists and must run outside the pass;
+    // simgui_draw() issues them and must run inside it.
+    simgui_flush();
+
     sg_pass pass = {};
     pass.action = g_pass_action;
     pass.swapchain = sglue_swapchain();
     sg_begin_pass(&pass);
-    simgui_render();
+    simgui_draw();
     sg_end_pass();
     sg_commit();
 }
