@@ -16,11 +16,16 @@ and renders the result to a movie file.
 | `src/core` planner | implemented, tested |
 | `src/io` decode, cache, encode | implemented, tested |
 | `src/cli` vrc | plans and renders |
-| `src/app` vrc-ui | **window only**, no preview, no parameters |
+| `src/app` vrc-ui | the seven steps, previews, threaded render; logic tested, drawing checked by eye only |
 
-`ctest` runs two tests: `core`, which needs nothing but a compiler, and `render`, which
-generates movies with ffmpeg, renders them with `vrc` and counts the result with ffprobe.
-A missing ffmpeg or ffprobe makes `render` fail rather than skip.
+`ctest` runs three tests. `core` and `app` need nothing but a compiler: the first covers the
+planner, the second drives the whole interface with fake decoders, so the seven steps, the
+seed bookkeeping, the previews and the render thread are exercised with no window, no GPU
+and no movie files. `render` generates movies with ffmpeg, renders them with `vrc` and
+counts the result with ffprobe; a missing ffmpeg or ffprobe makes it fail rather than skip.
+
+What no test covers is the drawing itself, `src/app/ui_draw.cpp` and the sokol_app shell.
+That needs a pair of eyes.
 
 ## Using it
 
@@ -40,6 +45,36 @@ are large.
 `--scaling fit|stretch|fill` decides what happens to a source whose size differs from the
 output. `fit` keeps the aspect ratio and pads with opaque black, `fill` crops to cover,
 `stretch` ignores the aspect ratio.
+
+`--reorder-seed N` keeps the cuts a `--seed` produced and redraws only the order the
+segments play in. It is the shell equivalent of the interface's "new order, same cuts"
+button, and it is why a state reached by clicking in the interface can be reproduced from a
+script: the interface prints the exact `vrc` line for whatever is on screen.
+
+## The interface
+
+```
+./build/vrc-ui
+```
+
+The seven numbered steps of the original patch, in its order: the source folder and its
+extension filter, one movie per voice, the cut parameters, CALCULATE, a second button that
+redraws the order while keeping the cuts, the output settings, and RENDER with a progress
+bar and a cancel button. The right half shows a preview of each voice and of the output,
+each with a slider: the output slider scrubs through the plan, frame by frame, before
+anything is written.
+
+What it adds to the patch:
+
+- Both seeds are on screen, with the plan digest, so a result worth keeping can be found
+  again. The patch's `Math.random()` could not be replayed.
+- The equivalent `vrc` command line, with a copy button: explore by clicking, then batch
+  from the shell.
+- More than two voices, up to eight. The patch was limited to two because it encoded the
+  voice in the sign of the frame number.
+- The predicted frame count covers every voice, not just the first.
+- A render runs in its own thread with its own decoders, so the previews stay live and the
+  window keeps responding while a file is being written.
 
 ## Before rendering from real footage
 

@@ -137,5 +137,22 @@ refuses --dry-run --seed 18446744073709551616 a.mov b.mov   # above 2^64-1
 refuses --dry-run --seed -1 a.mov b.mov
 refuses --dry-run --scaling squash a.mov b.mov
 refuses --seed 1 a.mov                                      # a render with no --out
+refuses --dry-run --reorder-seed 0 a.mov b.mov              # 0 would mean "draw one"
+
+# --reorder-seed keeps the cuts and redraws their order, which is what the interface's
+# Combine button does. It must change the timeline, keep the length, and replay exactly:
+# this is what makes a state reached by clicking Combine reproducible from the shell.
+base=$("$VRC" --dry-run --seed 42 --segments 6 --black 9 --black-run 3 a.mov b.mov)
+ro=$("$VRC" --dry-run --seed 42 --reorder-seed 777 --segments 6 --black 9 --black-run 3 a.mov b.mov)
+ro2=$("$VRC" --dry-run --seed 42 --reorder-seed 777 --segments 6 --black 9 --black-run 3 a.mov b.mov)
+[ "$(field plan "$ro")" != "$(field plan "$base")" ] \
+    || fail "--reorder-seed did not change the timeline"
+[ "$(field plan "$ro")" = "$(field plan "$ro2")" ] \
+    || fail "--reorder-seed does not replay"
+[ "$(field frames "$ro")" = "$(field frames "$base")" ] \
+    || fail "--reorder-seed changed the length"
+[ "$(field segments "$ro")" = "$(field segments "$base")" ] \
+    || fail "--reorder-seed changed the segment count"
+[ "$(field reorder "$ro")" = "777" ] || fail "the reorder seed is not reported back"
 
 echo "render: ok"

@@ -23,6 +23,8 @@ void usage() {
         "  --black N          total black frames to insert (default 0)\n"
         "  --black-run N      longest contiguous black run (default 1)\n"
         "  --seed N           0 draws one and reports it (default 0), full 64 bits\n"
+        "  --reorder-seed N   after cutting, redraw the segment order with this seed,\n"
+        "                     keeping the cuts: what the interface's Combine button does\n"
         "  --allow-adjacent   do not forbid temporally adjacent segments of one source\n"
         "  --out DIR          output directory, writes DIR/vid%%03d.mov\n"
         "  --codec NAME       prores422 | prores4444 | h264 | mjpeg\n"
@@ -69,6 +71,8 @@ int main(int argc, char** argv) {
     std::string out_dir;
     int64_t cache_mb = 1024;
     bool dry_run = false;
+    uint64_t reorder_seed = 0;
+    bool reorder = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -95,6 +99,14 @@ int main(int argc, char** argv) {
                              "bad value for --seed: expected an integer in [0, 2^64-1]\n");
                 return EXIT_FAILURE;
             }
+        } else if (a == "--reorder-seed") {
+            if (i + 1 >= argc || !parse_u64(argv[++i], &reorder_seed) || reorder_seed == 0) {
+                std::fprintf(
+                    stderr,
+                    "bad value for --reorder-seed: expected an integer in [1, 2^64-1]\n");
+                return EXIT_FAILURE;
+            }
+            reorder = true;
         } else if (a == "--scaling") {
             if (i + 1 >= argc) { usage(); return EXIT_FAILURE; }
             const std::string mode = argv[++i];
@@ -166,13 +178,25 @@ int main(int argc, char** argv) {
         decoders.push_back(std::move(d));
     }
 
-    const auto planned = vrc::build_plan(sources, params);
+    auto planned = vrc::build_plan(sources, params);
     if (!planned.ok) {
         std::fprintf(stderr, "cannot plan: %s\n", planned.error.c_str());
         return EXIT_FAILURE;
     }
+    const uint64_t cut_seed = planned.seed_used;
+    if (reorder) {
+        auto again = vrc::reorder_plan(planned.plan, reorder_seed,
+                                       params.avoid_adjacent_segments);
+        if (!again.ok) {
+            std::fprintf(stderr, "cannot reorder: %s\n", again.error.c_str());
+            return EXIT_FAILURE;
+        }
+        planned = std::move(again);
+    }
 
-    std::printf("seed      %llu\n", static_cast<unsigned long long>(planned.seed_used));
+    std::printf("seed      %llu\n", static_cast<unsigned long long>(cut_seed));
+    if (reorder)
+        std::printf("reorder   %llu\n", static_cast<unsigned long long>(reorder_seed));
     std::printf("sources   %zu\n", sources.size());
     std::printf("segments  %zu\n", planned.plan.segments.size());
     std::printf("frames    %zu (predicted %lld)\n", planned.plan.slots.size(),
