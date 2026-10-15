@@ -443,6 +443,31 @@ void test_many_voices(const std::string& dir) {
     check(!a.remove_source(), "refuses to drop the last voice");
 }
 
+// A folder dialog is recorded while drawing and run afterwards, never during. Opening a
+// native modal from inside the frame re-enters it through the nested event loop and
+// crashes ImGui, which is exactly what happened the first time this interface ran.
+void test_folder_request_is_deferred(const std::string& dir) {
+    vrc::AppState a;
+    check(a.take_folder_request() == vrc::FolderRequest::None, "nothing pending at rest");
+
+    a.request_folder(vrc::FolderRequest::Source);
+    check(a.take_folder_request() == vrc::FolderRequest::Source, "the request comes back");
+    check(a.take_folder_request() == vrc::FolderRequest::None,
+          "and taking it clears it, so one click opens one dialog");
+
+    a.request_folder(vrc::FolderRequest::Output);
+    a.request_folder(vrc::FolderRequest::Source);
+    check(a.take_folder_request() == vrc::FolderRequest::Source,
+          "a second request in the same frame replaces the first");
+
+    // Recording a request changes nothing else.
+    a.set_source_folder(dir);
+    const size_t before = a.folder_files().size();
+    a.request_folder(vrc::FolderRequest::Source);
+    check(a.folder_files().size() == before, "requesting a dialog touches no other state");
+    check(a.source_folder() == dir, "and does not change the folder by itself");
+}
+
 }  // namespace
 
 int main() {
@@ -459,6 +484,7 @@ int main() {
     test_render_failure(dir);
     test_previews(dir);
     test_many_voices(dir);
+    test_folder_request_is_deferred(dir);
 
     std::filesystem::remove_all(dir);
 

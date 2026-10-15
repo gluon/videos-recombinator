@@ -44,6 +44,18 @@ void init() {
 }
 
 void frame() {
+    // A native modal dialog, and macOS live window resizing, both run a nested event loop
+    // in which the display link keeps firing and calls this function again. Entering
+    // simgui_new_frame() while an ImGui frame is already open corrupts ImGui's window
+    // stack and crashes. The nested call simply skips a redraw, which is invisible.
+    static bool in_frame = false;
+    if (in_frame) return;
+    in_frame = true;
+    struct Guard {
+        bool* flag;
+        ~Guard() { *flag = false; }
+    } guard{&in_frame};
+
     g_app->poll_render();
 
     simgui_frame_desc_t fd = {};
@@ -66,6 +78,10 @@ void frame() {
     simgui_draw();
     sg_end_pass();
     sg_commit();
+
+    // Only now, with no ImGui frame open and the GPU work submitted, is it safe to run a
+    // modal dialog. See the note on ui_handle_pending_dialogs.
+    vrc::ui_handle_pending_dialogs(g_app);
 }
 
 void cleanup() {

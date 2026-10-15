@@ -124,14 +124,8 @@ void draw_sources_panel(AppState& a) {
     step_header(1, "SOURCE FOLDER", true);
 
     if (has_native_dialog()) {
-        if (ImGui::Button("Choose folder...")) {
-            std::string err;
-            const std::string f = pick_folder("Folder holding the source movies", &err);
-            if (!f.empty()) {
-                a.set_source_folder(f);
-                std::snprintf(g_source_folder, sizeof g_source_folder, "%s", f.c_str());
-            }
-        }
+        // Recorded, not opened: a modal dialog here would re-enter this very frame.
+        if (ImGui::Button("Choose folder...")) a.request_folder(FolderRequest::Source);
         ImGui::SameLine();
     }
     ImGui::SetNextItemWidth(-1.0f);
@@ -242,14 +236,7 @@ void draw_output_panel(AppState& a) {
     step_header(6, "OUTPUT", a.step_enabled(Step::SetOutput));
 
     if (has_native_dialog()) {
-        if (ImGui::Button("Choose output folder...")) {
-            std::string err;
-            const std::string f = pick_folder("Where to write the movie", &err);
-            if (!f.empty()) {
-                a.set_output_folder(f);
-                std::snprintf(g_output_folder, sizeof g_output_folder, "%s", f.c_str());
-            }
-        }
+        if (ImGui::Button("Choose output folder...")) a.request_folder(FolderRequest::Output);
         ImGui::SameLine();
     }
     ImGui::SetNextItemWidth(-1.0f);
@@ -395,6 +382,27 @@ void draw_previews(AppState& a) {
 }
 
 }  // namespace
+
+void ui_handle_pending_dialogs(AppState* app) {
+    AppState& a = *app;
+    const FolderRequest r = a.take_folder_request();
+    if (r == FolderRequest::None) return;
+
+    std::string err;
+    const std::string folder =
+        pick_folder(r == FolderRequest::Source ? "Folder holding the source movies"
+                                               : "Where to write the movie",
+                    &err);
+    if (folder.empty()) return;  // cancelled, or no dialog on this platform
+
+    if (r == FolderRequest::Source) {
+        a.set_source_folder(folder);
+        std::snprintf(g_source_folder, sizeof g_source_folder, "%s", folder.c_str());
+    } else {
+        a.set_output_folder(folder);
+        std::snprintf(g_output_folder, sizeof g_output_folder, "%s", folder.c_str());
+    }
+}
 
 void ui_discard_textures() {
     for (int i = 0; i < AppState::kMaxSources; ++i) release(&g_source_preview[i]);

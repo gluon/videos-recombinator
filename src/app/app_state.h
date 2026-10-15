@@ -22,6 +22,12 @@
 
 namespace vrc {
 
+// A folder dialog the user asked for while the interface was being drawn. It is recorded
+// rather than opened on the spot: a native modal dialog runs a nested event loop, which
+// re-enters the frame callback and therefore ImGui, from inside an unfinished ImGui frame.
+// The shell picks this up once the frame is over.
+enum class FolderRequest { None, Source, Output };
+
 // The seven steps of the original patch, in order. A step is reachable when the one before
 // it is satisfied, which is what the patch's numbering implied without enforcing.
 enum class Step {
@@ -148,6 +154,16 @@ class AppState {
     int64_t preview_slot() const { return preview_slot_; }
     void set_preview_slot(int64_t i);
 
+    // ---- folder dialogs -----------------------------------------------------------
+    // Drawing records the request; the shell runs the dialog after the frame and applies
+    // the answer. Never open a modal dialog while an ImGui frame is open.
+    void request_folder(FolderRequest r) { folder_request_ = r; }
+    FolderRequest take_folder_request() {
+        const FolderRequest r = folder_request_;
+        folder_request_ = FolderRequest::None;
+        return r;
+    }
+
     // ---- cross-cutting ------------------------------------------------------------
     // The furthest step the current state allows the user to act on.
     Step reachable_step() const;
@@ -178,6 +194,7 @@ class AppState {
 
     OutputParams out_;
     std::string out_folder_;
+    FolderRequest folder_request_ = FolderRequest::None;
 
     std::unique_ptr<FrameCache> preview_cache_;
     int64_t preview_slot_ = 0;
